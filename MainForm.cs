@@ -248,7 +248,7 @@ namespace HiJk
 
                 trayIcon = new NotifyIcon
                 {
-                    Text = "HiJk 系统监控\n点击显示主窗口",
+                    //Text = "HiJk 系统监控\n点击显示主窗口",
                     Icon = CreateSystemIcon(),
                     ContextMenuStrip = trayMenu,
                     Visible = true
