@@ -15,7 +15,7 @@ namespace HiJk
         private SystemEvents systemEvents;
         private List<ApplicationInfo> runningApplications;
         private Dictionary<string, BrowserSession> browserSessions;
-        private Dictionary<string, UrlVisit> activeUrlVisits; // 用于去重
+        private Dictionary<string, UrlVisit> activeUrlVisits;
         private DateTime lastCheckTime;
         private const string LogDirectory = "Logs";
         private object logLock = new object();
@@ -23,13 +23,11 @@ namespace HiJk
         private DateTime lastActivityTime = DateTime.Now;
         private bool disposed = false;
 
-        // 浏览器进程名列表（用于过滤）
         private readonly HashSet<string> browserProcesses = new HashSet<string>
         {
             "chrome", "firefox", "msedge", "edge", "iexplore", "opera", "brave", "safari", "vivaldi"
         };
 
-        // Windows API声明
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
@@ -56,25 +54,28 @@ namespace HiJk
         {
             try
             {
-                // 记录系统启动
+                WriteDebugLog("SystemMonitor 开始初始化...");
+
                 LogSystemEvent("System", "Startup", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
 
-                // 启动监控定时器
-                monitorTimer = new System.Timers.Timer(1000); // 1秒检查一次
+                monitorTimer = new System.Timers.Timer(1000);
                 monitorTimer.Elapsed += MonitorApplications;
                 monitorTimer.AutoReset = true;
                 monitorTimer.Enabled = true;
 
-                // 监听系统事件
-                systemEvents.Subscribe();
-                systemEvents.ApplicationOpened += OnApplicationOpened;
-                systemEvents.ApplicationClosed += OnApplicationClosed;
+                if (systemEvents != null)
+                {
+                    systemEvents.Subscribe();
+                    systemEvents.ApplicationOpened += OnApplicationOpened;
+                    systemEvents.ApplicationClosed += OnApplicationClosed;
+                }
 
-                Debug.WriteLine("系统监控已启动");
+                WriteDebugLog("SystemMonitor 启动完成");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"启动监控失败: {ex.Message}");
+                WriteDebugLog($"启动监控失败: {ex.Message}");
+                throw;
             }
         }
 
@@ -82,14 +83,14 @@ namespace HiJk
         {
             try
             {
-                // 记录系统关机
+                WriteDebugLog("SystemMonitor 正在停止...");
+
                 LogSystemEvent("System", "Shutdown", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
 
                 monitorTimer?.Stop();
                 monitorTimer?.Dispose();
                 monitorTimer = null;
 
-                // 保存所有活动应用的关闭记录（非浏览器应用）
                 foreach (var app in runningApplications.Where(a =>
                     a.EndTime == DateTime.MinValue && !IsBrowserProcess(a.ProcessName)))
                 {
@@ -97,11 +98,9 @@ namespace HiJk
                     LogApplicationEvent(app, "AutoClosed");
                 }
 
-                // 保存所有浏览器会话
                 foreach (var session in browserSessions.Values.Where(s => s.EndTime == DateTime.MinValue))
                 {
                     session.EndTime = DateTime.Now;
-                    // 记录所有URL访问记录
                     foreach (var urlVisit in session.Urls.Where(u => u.EndTime == DateTime.MinValue))
                     {
                         urlVisit.EndTime = DateTime.Now;
@@ -109,13 +108,11 @@ namespace HiJk
                     LogBrowserEvent(session);
                 }
 
-                // 保存所有活动的URL访问记录
                 foreach (var urlVisit in activeUrlVisits.Values.Where(u => u.EndTime == DateTime.MinValue))
                 {
                     urlVisit.EndTime = DateTime.Now;
                 }
 
-                // 取消事件订阅
                 if (systemEvents != null)
                 {
                     systemEvents.ApplicationOpened -= OnApplicationOpened;
@@ -123,11 +120,11 @@ namespace HiJk
                     systemEvents.Unsubscribe();
                 }
 
-                Debug.WriteLine("系统监控已停止");
+                WriteDebugLog("SystemMonitor 已停止");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"停止监控失败: {ex.Message}");
+                WriteDebugLog($"停止监控失败: {ex.Message}");
             }
         }
 
@@ -138,12 +135,26 @@ namespace HiJk
                 if (!Directory.Exists(LogDirectory))
                 {
                     Directory.CreateDirectory(LogDirectory);
-                    Debug.WriteLine($"日志目录已创建: {Path.GetFullPath(LogDirectory)}");
+                    WriteDebugLog($"日志目录已创建: {Path.GetFullPath(LogDirectory)}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"初始化日志目录失败: {ex.Message}");
+                WriteDebugLog($"初始化日志目录失败: {ex.Message}");
+            }
+        }
+
+        private void WriteDebugLog(string message)
+        {
+            try
+            {
+                string debugLogPath = Path.Combine(LogDirectory, "Debug.log");
+                string logContent = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}\n";
+                File.AppendAllText(debugLogPath, logContent, Encoding.UTF8);
+            }
+            catch
+            {
+                // 忽略调试日志错误
             }
         }
 
@@ -157,7 +168,7 @@ namespace HiJk
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"监控出错: {ex.Message}");
+                WriteDebugLog($"监控出错: {ex.Message}");
             }
         }
 
@@ -167,11 +178,9 @@ namespace HiJk
             {
                 IntPtr foregroundWindow = GetForegroundWindow();
 
-                // 检查窗口是否可见且有效
                 if (foregroundWindow == IntPtr.Zero || !IsWindowVisible(foregroundWindow))
                     return;
 
-                // 如果窗口没有变化，只更新时间
                 if (foregroundWindow == lastForegroundWindow)
                 {
                     if ((DateTime.Now - lastActivityTime).TotalMinutes > 1)
@@ -193,20 +202,16 @@ namespace HiJk
                 var windowTitle = GetWindowTitle(foregroundWindow);
                 var processName = process.ProcessName.ToLower();
 
-                // 检查是否为浏览器进程
                 if (IsBrowserProcess(processName))
                 {
-                    // 浏览器进程由专门的浏览器监控处理
                     return;
                 }
 
-                // 检查是否是新的应用（非浏览器）
                 var existingApp = runningApplications.FirstOrDefault(a =>
                     a.ProcessId == processId && a.EndTime == DateTime.MinValue);
 
                 if (existingApp == null)
                 {
-                    // 新应用打开（非浏览器）
                     var newApp = new ApplicationInfo
                     {
                         ProcessName = process.ProcessName,
@@ -222,7 +227,6 @@ namespace HiJk
                 }
                 else if (existingApp.WindowTitle != windowTitle)
                 {
-                    // 窗口标题变化，视为新会话
                     existingApp.EndTime = DateTime.Now;
                     LogApplicationEvent(existingApp, "WindowChanged");
 
@@ -242,7 +246,7 @@ namespace HiJk
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"检查活动窗口失败: {ex.Message}");
+                WriteDebugLog($"检查活动窗口失败: {ex.Message}");
             }
         }
 
@@ -250,15 +254,18 @@ namespace HiJk
         {
             try
             {
+                var activeBrowsers = new HashSet<string>();
+
                 foreach (var browserName in browserProcesses)
                 {
                     var processes = Process.GetProcessesByName(browserName);
 
                     if (processes.Any())
                     {
+                        activeBrowsers.Add(browserName);
+
                         if (!browserSessions.ContainsKey(browserName))
                         {
-                            // 新浏览器会话开始
                             var session = new BrowserSession
                             {
                                 BrowserName = browserName,
@@ -267,38 +274,42 @@ namespace HiJk
                                 Urls = new List<UrlVisit>()
                             };
                             browserSessions[browserName] = session;
+                            // 不再记录 BrowserStarted 事件
                         }
 
-                        // 为每个浏览器进程检查活动标签页
                         foreach (var process in processes)
                         {
-                            CheckBrowserWindowTitle(process, browserName);
+                            if (!string.IsNullOrEmpty(process.MainWindowTitle))
+                            {
+                                CheckBrowserWindowTitle(process, browserName);
+                            }
                         }
-                    }
-                    else if (browserSessions.ContainsKey(browserName) &&
-                             browserSessions[browserName].EndTime == DateTime.MinValue)
-                    {
-                        // 浏览器已关闭
-                        var session = browserSessions[browserName];
-                        session.EndTime = DateTime.Now;
-
-                        // 结束所有活动的URL访问记录
-                        foreach (var urlVisit in session.Urls.Where(u => u.EndTime == DateTime.MinValue))
-                        {
-                            urlVisit.EndTime = DateTime.Now;
-                        }
-
-                        LogBrowserEvent(session, "BrowserClosed");
-                        browserSessions.Remove(browserName);
                     }
                 }
 
-                // 清理已结束的URL访问记录
+                var endedBrowsers = browserSessions.Keys
+                    .Where(b => !activeBrowsers.Contains(b) && browserSessions[b].EndTime == DateTime.MinValue)
+                    .ToList();
+
+                foreach (var browserName in endedBrowsers)
+                {
+                    var session = browserSessions[browserName];
+                    session.EndTime = DateTime.Now;
+
+                    foreach (var urlVisit in session.Urls.Where(u => u.EndTime == DateTime.MinValue))
+                    {
+                        urlVisit.EndTime = DateTime.Now;
+                    }
+
+                    LogBrowserEvent(session, "BrowserClosed");
+                    browserSessions.Remove(browserName);
+                }
+
                 CleanupUrlVisits();
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"检查浏览器活动失败: {ex.Message}");
+                WriteDebugLog($"检查浏览器活动失败: {ex.Message}");
             }
         }
 
@@ -306,29 +317,29 @@ namespace HiJk
         {
             try
             {
-                // 获取浏览器窗口标题（通常包含URL信息）
-                var windowTitle = GetBrowserWindowTitle(process);
+                string windowTitle = process.MainWindowTitle;
 
                 if (string.IsNullOrEmpty(windowTitle) ||
                     windowTitle.StartsWith("New Tab", StringComparison.OrdinalIgnoreCase) ||
-                    windowTitle.StartsWith(browserName, StringComparison.OrdinalIgnoreCase))
+                    windowTitle.StartsWith(browserName, StringComparison.OrdinalIgnoreCase) ||
+                    windowTitle == "无标题")
                 {
                     return;
                 }
 
-                // 尝试从窗口标题提取URL
                 var url = ExtractUrlFromTitle(windowTitle);
                 if (string.IsNullOrEmpty(url))
                 {
-                    url = windowTitle; // 如果无法提取URL，则使用完整标题
+                    url = windowTitle;
                 }
 
-                // 检查是否为重复的URL访问
+                if (url == "无标题" || string.IsNullOrWhiteSpace(url))
+                    return;
+
                 var urlKey = $"{browserName}_{url}";
 
                 if (!activeUrlVisits.ContainsKey(urlKey))
                 {
-                    // 新的URL访问
                     var urlVisit = new UrlVisit
                     {
                         Url = url,
@@ -343,80 +354,57 @@ namespace HiJk
                         browserSessions[browserName].Urls.Add(urlVisit);
                     }
 
-                    // 立即记录URL访问开始
-                    LogUrlVisit(urlVisit, browserName, "UrlOpened");
+                    // 只记录 URL 打开事件
+                    if (ShouldLogUrlEvent("UrlOpened"))
+                    {
+                        LogUrlVisit(urlVisit, browserName, "UrlOpened");
+                    }
                 }
                 else
                 {
-                    // 更新现有URL访问的时间（避免重复记录）
                     var existingVisit = activeUrlVisits[urlKey];
                     if (existingVisit.EndTime != DateTime.MinValue)
                     {
-                        // URL已结束，重新开始访问
+                        // URL 重新打开 - 不记录 UrlReopened 事件
                         existingVisit.StartTime = DateTime.Now;
                         existingVisit.EndTime = DateTime.MinValue;
-                        LogUrlVisit(existingVisit, browserName, "UrlReopened");
+                        // 不记录 UrlReopened 事件
                     }
                 }
 
-                // 标记其他URL为已结束（浏览器一次只能显示一个标签页）
                 var currentUrlKey = urlKey;
-                foreach (var kvp in activeUrlVisits.Where(x =>
-                    x.Key != currentUrlKey && x.Value.EndTime == DateTime.MinValue).ToList())
+                var otherVisits = activeUrlVisits.Where(x =>
+                    x.Key != currentUrlKey && x.Value.EndTime == DateTime.MinValue).ToList();
+
+                foreach (var kvp in otherVisits)
                 {
                     var otherVisit = kvp.Value;
                     otherVisit.EndTime = DateTime.Now;
-                    LogUrlVisit(otherVisit, browserName, "UrlSwitched");
+
+                    // 不记录 UrlSwitched 事件
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"检查浏览器窗口失败: {ex.Message}");
+                WriteDebugLog($"检查浏览器窗口失败: {ex.Message}");
             }
-        }
-
-        private string GetBrowserWindowTitle(Process process)
-        {
-            try
-            {
-                IntPtr mainWindowHandle = process.MainWindowHandle;
-                if (mainWindowHandle == IntPtr.Zero)
-                {
-                    // 尝试查找第一个可见窗口
-                    foreach (ProcessThread thread in process.Threads)
-                    {
-                        // 这里可以添加更复杂的窗口查找逻辑
-                    }
-                    return string.Empty;
-                }
-
-                const int nChars = 1024;
-                StringBuilder buff = new StringBuilder(nChars);
-                if (GetWindowText(mainWindowHandle, buff, nChars) > 0)
-                {
-                    return buff.ToString();
-                }
-            }
-            catch { }
-            return string.Empty;
         }
 
         private string ExtractUrlFromTitle(string windowTitle)
         {
-            // 尝试从窗口标题提取URL
-            // 常见的浏览器标题格式: "页面标题 - 浏览器名" 或 "页面标题"
+            var browsers = new[] {
+                " - Google Chrome", " - Mozilla Firefox", " - Microsoft Edge",
+                " - Brave", " - Opera", " - Safari", " - Vivaldi"
+            };
 
-            // 移除浏览器名后缀
-            var browsers = new[] { " - Google Chrome", " - Mozilla Firefox", " - Microsoft Edge", " - Brave", " - Opera" };
             foreach (var browser in browsers)
             {
                 if (windowTitle.EndsWith(browser))
                 {
-                    return windowTitle.Substring(0, windowTitle.Length - browser.Length);
+                    return windowTitle.Substring(0, windowTitle.Length - browser.Length).Trim();
                 }
             }
 
-            // 检查是否是URL格式（包含://）
             if (windowTitle.Contains("://"))
             {
                 return windowTitle;
@@ -427,10 +415,9 @@ namespace HiJk
 
         private void CleanupUrlVisits()
         {
-            // 清理已结束超过1分钟的URL访问记录
             var oldVisits = activeUrlVisits.Where(kvp =>
                 kvp.Value.EndTime != DateTime.MinValue &&
-                (DateTime.Now - kvp.Value.EndTime).TotalMinutes > 1).ToList();
+                (DateTime.Now - kvp.Value.EndTime).TotalMinutes > 5).ToList();
 
             foreach (var kvp in oldVisits)
             {
@@ -472,7 +459,6 @@ namespace HiJk
 
         private void OnApplicationOpened(ApplicationInfo app)
         {
-            // 如果是浏览器进程，不记录到Applications日志
             if (!IsBrowserProcess(app.ProcessName))
             {
                 LogApplicationEvent(app, "Opened");
@@ -481,7 +467,6 @@ namespace HiJk
 
         private void OnApplicationClosed(ApplicationInfo app)
         {
-            // 如果是浏览器进程，不记录到Applications日志
             if (IsBrowserProcess(app.ProcessName))
                 return;
 
@@ -509,10 +494,17 @@ namespace HiJk
                 logEntry.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
                 logEntry.AppendLine($"事件: {eventType}");
                 logEntry.AppendLine($"进程: {app.ProcessName}");
-                logEntry.AppendLine($"标题: {app.WindowTitle}");
+
+                if (!string.IsNullOrEmpty(app.WindowTitle) && app.WindowTitle != "Unknown")
+                {
+                    logEntry.AppendLine($"标题: {app.WindowTitle}");
+                }
+
                 logEntry.AppendLine($"进程ID: {app.ProcessId}");
                 logEntry.AppendLine($"开始时间: {app.StartTime:HH:mm:ss}");
-                logEntry.AppendLine($"结束时间: {(app.EndTime == DateTime.MinValue ? "运行中" : app.EndTime.ToString("HH:mm:ss"))}");
+
+                string endTime = app.EndTime == DateTime.MinValue ? "运行中" : app.EndTime.ToString("HH:mm:ss");
+                logEntry.AppendLine($"结束时间: {endTime}");
 
                 if (app.EndTime != DateTime.MinValue)
                 {
@@ -530,7 +522,7 @@ namespace HiJk
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"记录应用事件失败: {ex.Message}");
+                WriteDebugLog($"记录应用事件失败: {ex.Message}");
             }
         }
 
@@ -538,12 +530,18 @@ namespace HiJk
         {
             try
             {
+                // 忽略 BrowserStarted 事件
+                if (eventType == "BrowserStarted")
+                    return;
+
                 var logEntry = new StringBuilder();
                 logEntry.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
                 logEntry.AppendLine($"事件: {eventType}");
                 logEntry.AppendLine($"浏览器: {session.BrowserName}");
                 logEntry.AppendLine($"开始时间: {session.StartTime:HH:mm:ss}");
-                logEntry.AppendLine($"结束时间: {(session.EndTime == DateTime.MinValue ? "运行中" : session.EndTime.ToString("HH:mm:ss"))}");
+
+                string endTime = session.EndTime == DateTime.MinValue ? "运行中" : session.EndTime.ToString("HH:mm:ss");
+                logEntry.AppendLine($"结束时间: {endTime}");
 
                 if (session.EndTime != DateTime.MinValue)
                 {
@@ -553,24 +551,33 @@ namespace HiJk
 
                 if (session.Urls.Any())
                 {
-                    logEntry.AppendLine("访问记录:");
-                    // 去除重复的URL，只记录不同的URL
                     var distinctUrls = session.Urls
-                        .Where(u => u.EndTime != DateTime.MinValue)
+                        .Where(u => u.EndTime != DateTime.MinValue &&
+                                   !string.IsNullOrEmpty(u.Url) &&
+                                   u.Url != "无标题")
                         .GroupBy(u => u.Url)
                         .Select(g => new
                         {
                             Url = g.Key,
-                            StartTime = g.Min(u => u.StartTime),
-                            EndTime = g.Max(u => u.EndTime),
-                            TotalDuration = TimeSpan.FromSeconds(g.Sum(u => (u.EndTime - u.StartTime).TotalSeconds))
-                        });
+                            VisitCount = g.Count(),
+                            TotalDuration = TimeSpan.FromSeconds(g.Sum(u => (u.EndTime - u.StartTime).TotalSeconds)),
+                            FirstVisit = g.Min(u => u.StartTime),
+                            LastVisit = g.Max(u => u.EndTime)
+                        })
+                        .OrderByDescending(u => u.TotalDuration)
+                        .ToList();
 
-                    foreach (var urlInfo in distinctUrls)
+                    if (distinctUrls.Any())
                     {
-                        logEntry.AppendLine($"  URL: {urlInfo.Url}");
-                        logEntry.AppendLine($"    访问时间: {urlInfo.StartTime:HH:mm:ss} - {urlInfo.EndTime:HH:mm:ss}");
-                        logEntry.AppendLine($"    总时长: {urlInfo.TotalDuration.ToString(@"hh\:mm\:ss")}");
+                        logEntry.AppendLine("访问记录:");
+                        foreach (var urlInfo in distinctUrls)
+                        {
+                            logEntry.AppendLine($"  URL: {urlInfo.Url}");
+                            logEntry.AppendLine($"    访问次数: {urlInfo.VisitCount}");
+                            logEntry.AppendLine($"    总时长: {urlInfo.TotalDuration.ToString(@"hh\:mm\:ss")}");
+                            logEntry.AppendLine($"    首次访问: {urlInfo.FirstVisit:HH:mm:ss}");
+                            logEntry.AppendLine($"    最后访问: {urlInfo.LastVisit:HH:mm:ss}");
+                        }
                     }
                 }
                 logEntry.AppendLine(new string('-', 60));
@@ -579,7 +586,7 @@ namespace HiJk
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"记录浏览器事件失败: {ex.Message}");
+                WriteDebugLog($"记录浏览器事件失败: {ex.Message}");
             }
         }
 
@@ -587,18 +594,32 @@ namespace HiJk
         {
             try
             {
+                // 过滤不需要的事件类型
+                if (ShouldSkipUrlLog(eventType, urlVisit.Url))
+                    return;
+
                 var logEntry = new StringBuilder();
                 logEntry.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
                 logEntry.AppendLine($"事件: {eventType}");
                 logEntry.AppendLine($"浏览器: {browserName}");
-                logEntry.AppendLine($"URL: {urlVisit.Url}");
+
+                if (!string.IsNullOrEmpty(urlVisit.Url) && urlVisit.Url != "无标题")
+                {
+                    logEntry.AppendLine($"URL: {urlVisit.Url}");
+                }
+
                 logEntry.AppendLine($"开始时间: {urlVisit.StartTime:HH:mm:ss}");
-                logEntry.AppendLine($"结束时间: {(urlVisit.EndTime == DateTime.MinValue ? "访问中" : urlVisit.EndTime.ToString("HH:mm:ss"))}");
+
+                string endTime = urlVisit.EndTime == DateTime.MinValue ? "访问中" : urlVisit.EndTime.ToString("HH:mm:ss");
+                logEntry.AppendLine($"结束时间: {endTime}");
 
                 if (urlVisit.EndTime != DateTime.MinValue)
                 {
                     var duration = urlVisit.EndTime - urlVisit.StartTime;
-                    logEntry.AppendLine($"持续时间: {duration.ToString(@"hh\:mm\:ss")}");
+                    if (duration.TotalSeconds > 0)
+                    {
+                        logEntry.AppendLine($"持续时间: {duration.ToString(@"hh\:mm\:ss")}");
+                    }
                 }
                 logEntry.AppendLine(new string('-', 40));
 
@@ -606,8 +627,32 @@ namespace HiJk
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"记录URL访问失败: {ex.Message}");
+                WriteDebugLog($"记录URL访问失败: {ex.Message}");
             }
+        }
+
+        private bool ShouldSkipUrlLog(string eventType, string url)
+        {
+            // 忽略的事件类型
+            if (eventType == "UrlSwitched" || eventType == "UrlReopened")
+            {
+                return true;
+            }
+
+            if (eventType == "UrlSwitched")
+            {
+                if (string.IsNullOrEmpty(url) || url == "无标题")
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool ShouldLogUrlEvent(string eventType)
+        {
+            // 只允许记录的事件类型
+            string[] allowedEvents = { "UrlOpened", "UrlClosed" };
+            return allowedEvents.Contains(eventType);
         }
 
         private void LogSystemEvent(string category, string eventName, string details)
@@ -625,7 +670,7 @@ namespace HiJk
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"记录系统事件失败: {ex.Message}");
+                WriteDebugLog($"记录系统事件失败: {ex.Message}");
             }
         }
 
@@ -638,14 +683,12 @@ namespace HiJk
                     string date = DateTime.Now.ToString("yyyy-MM-dd");
                     string logFile = Path.Combine(LogDirectory, $"{date}_{category}.log");
 
-                    // 确保目录存在
                     Directory.CreateDirectory(Path.GetDirectoryName(logFile));
-
                     File.AppendAllText(logFile, content, Encoding.UTF8);
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"写入日志失败: {ex.Message}");
+                    WriteDebugLog($"写入日志失败: {ex.Message}");
                 }
             }
         }
