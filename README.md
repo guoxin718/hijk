@@ -10,5 +10,4 @@
 
 2. xxxx-xx-xx_Applications.log中，记录所有打开过的程序，以及开始使用的时间；
 
-3.xxxx-xx-xx_System.log中，记录本程序的开、关时间；
-
+3. xxxx-xx-xx_System.log中，记录本程序的开、关时间；
