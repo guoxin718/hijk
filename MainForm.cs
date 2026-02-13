@@ -2,7 +2,6 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 
@@ -78,7 +77,7 @@ namespace HiJk
         private void SetupForm()
         {
             this.Text = "HiJk 系统监控";
-            this.Size = new Size(600, 400);
+            this.Size = new Size(650, 500);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
@@ -103,49 +102,73 @@ namespace HiJk
                 TextAlign = ContentAlignment.MiddleLeft
             };
 
+            // 修复换行问题 - 使用 Environment.NewLine 确保正确换行
             var statusLabel = new Label
             {
-                Text = "✓ 系统监控正在后台运行\n" +
-                       "✓ 日志保存在 Logs 文件夹中\n" +
+                Text = "✓ 系统监控正在后台运行" + Environment.NewLine +
+                       "✓ 日志保存在 Logs 文件夹中" + Environment.NewLine +
+                       "✓ 截图保存在 Screenshots 文件夹中" + Environment.NewLine +
+                       "✓ 统计报告保存在 Statistics 文件夹中" + Environment.NewLine +
                        "✓ 右键点击托盘图标查看选项",
                 Font = new Font("Microsoft YaHei", 11),
-                AutoSize = false,
-                Height = 100,
-                Padding = new Padding(0, 20, 0, 0),
-                TextAlign = ContentAlignment.MiddleLeft
+                AutoSize = true,  // 改为 AutoSize
+                Location = new Point(20, 60),  // 使用绝对定位
+                Padding = new Padding(0),
+                TextAlign = ContentAlignment.TopLeft,
+                MaximumSize = new Size(this.Width - 80, 0)  // 设置最大宽度
+            };
+
+            // 使用绝对定位的Panel来放置状态信息
+            var infoPanel = new Panel
+            {
+                Location = new Point(20, 180),
+                Size = new Size(this.Width - 80, 120),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
 
             var logPathLabel = new Label
             {
                 Text = $"日志路径: {Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs")}",
                 Font = new Font("Microsoft YaHei", 9),
-                AutoSize = false,
-                Height = 30,
-                ForeColor = Color.Gray,
-                Padding = new Padding(0, 10, 0, 0),
-                TextAlign = ContentAlignment.MiddleLeft
+                AutoSize = true,
+                Location = new Point(0, 0),
+                ForeColor = Color.Gray
             };
 
-            var infoPanel = new Panel
+            var screenshotPathLabel = new Label
             {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(0, 10, 0, 0)
+                Text = $"截图路径: {Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Screenshots")}",
+                Font = new Font("Microsoft YaHei", 9),
+                AutoSize = true,
+                Location = new Point(0, 25),
+                ForeColor = Color.Gray
             };
-            infoPanel.Controls.Add(statusLabel);
+
+            var statsPathLabel = new Label
+            {
+                Text = $"统计路径: {Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Statistics")}",
+                Font = new Font("Microsoft YaHei", 9),
+                AutoSize = true,
+                Location = new Point(0, 50),
+                ForeColor = Color.Gray
+            };
+
             infoPanel.Controls.Add(logPathLabel);
+            infoPanel.Controls.Add(screenshotPathLabel);
+            infoPanel.Controls.Add(statsPathLabel);
 
             var buttonPanel = new Panel
             {
-                Height = 60,
-                Dock = DockStyle.Bottom,
-                Padding = new Padding(0, 10, 0, 0)
+                Location = new Point(20, 320),
+                Size = new Size(this.Width - 80, 120),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
 
             var hideButton = new Button
             {
                 Text = "隐藏到托盘",
                 Size = new Size(100, 35),
-                Location = new Point(10, 10),
+                Location = new Point(0, 0),
                 Font = new Font("Microsoft YaHei", 9),
                 BackColor = Color.LightGray,
                 FlatStyle = FlatStyle.Flat
@@ -156,7 +179,7 @@ namespace HiJk
             {
                 Text = "打开日志文件夹",
                 Size = new Size(120, 35),
-                Location = new Point(120, 10),
+                Location = new Point(110, 0),
                 Font = new Font("Microsoft YaHei", 9),
                 BackColor = Color.LightSkyBlue,
                 FlatStyle = FlatStyle.Flat
@@ -183,24 +206,122 @@ namespace HiJk
                 }
             };
 
+            var viewStatsButton = new Button
+            {
+                Text = "查看今日统计分析",
+                Size = new Size(150, 35),
+                Location = new Point(240, 0),
+                Font = new Font("Microsoft YaHei", 9),
+                BackColor = Color.LightGreen,
+                FlatStyle = FlatStyle.Flat
+            };
+            viewStatsButton.Click += (s, e) => ViewTodayStatistics();
+
+            var openScreenshotsButton = new Button
+            {
+                Text = "打开截图文件夹",
+                Size = new Size(120, 35),
+                Location = new Point(400, 0),
+                Font = new Font("Microsoft YaHei", 9),
+                BackColor = Color.LightSalmon,
+                FlatStyle = FlatStyle.Flat
+            };
+            openScreenshotsButton.Click += (s, e) =>
+            {
+                try
+                {
+                    string screenshotPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Screenshots");
+                    if (!Directory.Exists(screenshotPath))
+                    {
+                        Directory.CreateDirectory(screenshotPath);
+                    }
+                    Process.Start("explorer.exe", $"\"{screenshotPath}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"打开截图文件夹失败: {ex.Message}", "错误",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+
             var exitButton = new Button
             {
                 Text = "退出程序",
                 Size = new Size(100, 35),
-                Location = new Point(250, 10),
+                Location = new Point(530, 0),
                 Font = new Font("Microsoft YaHei", 9),
                 BackColor = Color.LightCoral,
                 FlatStyle = FlatStyle.Flat
             };
             exitButton.Click += OnExit;
 
+            // 第二行按钮
+            var openStatsFolderButton = new Button
+            {
+                Text = "打开统计文件夹",
+                Size = new Size(120, 35),
+                Location = new Point(0, 45),
+                Font = new Font("Microsoft YaHei", 9),
+                BackColor = Color.LightBlue,
+                FlatStyle = FlatStyle.Flat
+            };
+            openStatsFolderButton.Click += (s, e) =>
+            {
+                try
+                {
+                    string statsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Statistics");
+                    if (!Directory.Exists(statsPath))
+                    {
+                        Directory.CreateDirectory(statsPath);
+                    }
+                    Process.Start("explorer.exe", $"\"{statsPath}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"打开统计文件夹失败: {ex.Message}", "错误",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+
+            var openTodayScreenshotsButton = new Button
+            {
+                Text = "打开今日截图",
+                Size = new Size(120, 35),
+                Location = new Point(130, 45),
+                Font = new Font("Microsoft YaHei", 9),
+                BackColor = Color.LightYellow,
+                FlatStyle = FlatStyle.Flat
+            };
+            openTodayScreenshotsButton.Click += (s, e) =>
+            {
+                try
+                {
+                    string todayFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Screenshots", DateTime.Now.ToString("yyyy-MM-dd"));
+                    if (!Directory.Exists(todayFolder))
+                    {
+                        Directory.CreateDirectory(todayFolder);
+                    }
+                    Process.Start("explorer.exe", $"\"{todayFolder}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"打开今日截图文件夹失败: {ex.Message}", "错误",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+
             buttonPanel.Controls.Add(hideButton);
             buttonPanel.Controls.Add(openLogsButton);
+            buttonPanel.Controls.Add(viewStatsButton);
+            buttonPanel.Controls.Add(openScreenshotsButton);
             buttonPanel.Controls.Add(exitButton);
+            buttonPanel.Controls.Add(openStatsFolderButton);
+            buttonPanel.Controls.Add(openTodayScreenshotsButton);
 
+            panel.Controls.Add(titleLabel);
+            panel.Controls.Add(statusLabel);
             panel.Controls.Add(infoPanel);
             panel.Controls.Add(buttonPanel);
-            panel.Controls.Add(titleLabel);
 
             this.Controls.Add(panel);
         }
@@ -232,9 +353,41 @@ namespace HiJk
                 };
                 trayMenu.Items.Add(openLogsItem);
 
-                var viewLogsItem = new ToolStripMenuItem("查看今日日志");
-                viewLogsItem.Click += (s, e) => ViewTodayLogs();
-                trayMenu.Items.Add(viewLogsItem);
+                var openScreenshotsItem = new ToolStripMenuItem("打开截图文件夹");
+                openScreenshotsItem.Click += (s, e) =>
+                {
+                    try
+                    {
+                        string screenshotPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Screenshots");
+                        if (!Directory.Exists(screenshotPath))
+                        {
+                            Directory.CreateDirectory(screenshotPath);
+                        }
+                        Process.Start("explorer.exe", $"\"{screenshotPath}\"");
+                    }
+                    catch { }
+                };
+                trayMenu.Items.Add(openScreenshotsItem);
+
+                var openStatsItem = new ToolStripMenuItem("打开统计文件夹");
+                openStatsItem.Click += (s, e) =>
+                {
+                    try
+                    {
+                        string statsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Statistics");
+                        if (!Directory.Exists(statsPath))
+                        {
+                            Directory.CreateDirectory(statsPath);
+                        }
+                        Process.Start("explorer.exe", $"\"{statsPath}\"");
+                    }
+                    catch { }
+                };
+                trayMenu.Items.Add(openStatsItem);
+
+                var viewStatsItem = new ToolStripMenuItem("查看今日统计分析");
+                viewStatsItem.Click += (s, e) => ViewTodayStatistics();
+                trayMenu.Items.Add(viewStatsItem);
 
                 trayMenu.Items.Add(new ToolStripSeparator());
 
@@ -248,15 +401,12 @@ namespace HiJk
 
                 trayIcon = new NotifyIcon
                 {
-                    //Text = "HiJk 系统监控\n点击显示主窗口",
+                    Text = "HiJk 系统监控\n点击显示主窗口",
                     Icon = CreateSystemIcon(),
                     ContextMenuStrip = trayMenu,
                     Visible = true
                 };
                 trayIcon.DoubleClick += (s, e) => ShowMainWindow();
-
-                // 移除所有提示：注释掉 ShowBalloonTip 调用
-                // 启动时不显示任何提示
             }
             catch (Exception ex)
             {
@@ -287,10 +437,8 @@ namespace HiJk
             try
             {
                 monitor = new SystemMonitor();
+                monitor.SetMainForm(this);
                 monitor.Start();
-
-                // 移除启动成功提示
-                // 完全静默启动
             }
             catch (Exception ex)
             {
@@ -324,125 +472,130 @@ namespace HiJk
                 allowVisible = false;
                 this.Hide();
                 this.ShowInTaskbar = false;
-
-                // 移除最小化到托盘时的提示
-                // 完全静默隐藏
             }
             catch { }
         }
 
-        private void ViewTodayLogs()
+        private void ViewTodayStatistics()
         {
             try
             {
-                string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
-                string today = DateTime.Now.ToString("yyyy-MM-dd");
-
-                if (!Directory.Exists(logPath))
+                if (monitor == null)
                 {
-                    MessageBox.Show("日志文件夹不存在，可能还没有生成日志。", "提示",
+                    MessageBox.Show("监控服务未启动", "提示",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
-                var logTypes = new[] { "System", "Applications", "Browser" };
-                StringBuilder allLogs = new StringBuilder();
-                bool hasLogs = false;
+                string statsContent = monitor.GetTodayStatistics();
 
-                foreach (var logType in logTypes)
+                using (var dialog = new Form
                 {
-                    string logFile = Path.Combine(logPath, $"{today}_{logType}.log");
-
-                    if (File.Exists(logFile))
-                    {
-                        hasLogs = true;
-                        allLogs.AppendLine($"=== {logType} 日志 ===");
-                        string content = File.ReadAllText(logFile, Encoding.UTF8);
-
-                        if (string.IsNullOrWhiteSpace(content))
-                        {
-                            allLogs.AppendLine("（空）");
-                        }
-                        else
-                        {
-                            allLogs.AppendLine(content);
-                        }
-                        allLogs.AppendLine();
-                    }
-                }
-
-                if (hasLogs)
+                    Text = "今日统计分析报告",
+                    Size = new Size(1000, 700),
+                    StartPosition = FormStartPosition.CenterParent,
+                    MinimizeBox = true,
+                    MaximizeBox = true,
+                    Icon = this.Icon
+                })
                 {
-                    using (var dialog = new Form
+                    var textBox = new TextBox
                     {
-                        Text = "今日日志",
-                        Size = new Size(800, 600),
-                        StartPosition = FormStartPosition.CenterParent,
-                        MinimizeBox = true,
-                        MaximizeBox = true,
-                        Icon = this.Icon
-                    })
-                    {
-                        var textBox = new TextBox
-                        {
-                            Multiline = true,
-                            Dock = DockStyle.Fill,
-                            ScrollBars = ScrollBars.Both,
-                            Font = new Font("Consolas", 10),
-                            ReadOnly = true,
-                            Text = allLogs.ToString()
-                        };
+                        Multiline = true,
+                        Dock = DockStyle.Fill,
+                        ScrollBars = ScrollBars.Both,
+                        Font = new Font("Consolas", 10),
+                        ReadOnly = true,
+                        Text = statsContent,
+                        WordWrap = false
+                    };
 
-                        var copyButton = new Button
+                    var copyButton = new Button
+                    {
+                        Text = "复制内容",
+                        Size = new Size(100, 30),
+                        Location = new Point(10, 10),
+                        FlatStyle = FlatStyle.Flat
+                    };
+                    copyButton.Click += (s, e) =>
+                    {
+                        Clipboard.SetText(textBox.Text);
+                        MessageBox.Show("已复制到剪贴板", "提示",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    };
+
+                    var saveButton = new Button
+                    {
+                        Text = "另存为",
+                        Size = new Size(100, 30),
+                        Location = new Point(120, 10),
+                        FlatStyle = FlatStyle.Flat
+                    };
+                    saveButton.Click += (s, e) =>
+                    {
+                        SaveFileDialog saveDialog = new SaveFileDialog();
+                        saveDialog.Filter = "文本文件|*.txt|所有文件|*.*";
+                        saveDialog.DefaultExt = "txt";
+                        saveDialog.FileName = $"Statistics_{DateTime.Now:yyyy-MM-dd}.txt";
+
+                        if (saveDialog.ShowDialog() == DialogResult.OK)
                         {
-                            Text = "复制内容",
-                            Size = new Size(80, 30),
-                            Location = new Point(10, 10),
-                            FlatStyle = FlatStyle.Flat
-                        };
-                        copyButton.Click += (s, e) =>
-                        {
-                            Clipboard.SetText(textBox.Text);
-                            MessageBox.Show("已复制到剪贴板", "提示",
+                            File.WriteAllText(saveDialog.FileName, textBox.Text, Encoding.UTF8);
+                            MessageBox.Show("统计报告已保存", "提示",
                                 MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        };
+                        }
+                    };
 
-                        var panel = new Panel
-                        {
-                            Height = 50,
-                            Dock = DockStyle.Bottom,
-                            BackColor = Color.LightGray
-                        };
-                        panel.Controls.Add(copyButton);
+                    var refreshButton = new Button
+                    {
+                        Text = "刷新",
+                        Size = new Size(100, 30),
+                        Location = new Point(230, 10),
+                        FlatStyle = FlatStyle.Flat
+                    };
+                    refreshButton.Click += (s, e) =>
+                    {
+                        textBox.Text = monitor.GetTodayStatistics();
+                    };
 
-                        dialog.Controls.Add(panel);
-                        dialog.Controls.Add(textBox);
-                        dialog.ShowDialog(this);
-                    }
-                }
-                else
-                {
-                    MessageBox.Show("今日没有找到日志文件", "提示",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    var panel = new Panel
+                    {
+                        Height = 50,
+                        Dock = DockStyle.Bottom,
+                        BackColor = Color.LightGray
+                    };
+                    panel.Controls.Add(copyButton);
+                    panel.Controls.Add(saveButton);
+                    panel.Controls.Add(refreshButton);
+
+                    dialog.Controls.Add(panel);
+                    dialog.Controls.Add(textBox);
+                    dialog.ShowDialog(this);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"查看日志失败: {ex.Message}", "错误",
+                MessageBox.Show($"查看统计分析失败: {ex.Message}", "错误",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogToFile("ViewStatisticsError", ex.ToString());
             }
         }
 
         private void ShowAbout()
         {
             MessageBox.Show(
-                "HiJk 系统监控 v1.0\n" +
+                "HiJk 系统监控 v2.0\n\n" +
                 "功能：\n" +
                 "• 记录电脑开机/关机时间\n" +
                 "• 记录应用程序使用情况\n" +
                 "• 记录浏览器访问记录\n" +
-                "• 每日生成日志文件\n\n" +
-                "日志保存在程序目录的 Logs 文件夹中",
+                "• 每10分钟自动屏幕截图（包含任务栏）\n" +
+                "• 程序启动/关闭时自动截图\n" +
+                "• 每日生成统计分析报告\n" +
+                "• 实时查看今日统计分析\n\n" +
+                "日志保存在 Logs 文件夹\n" +
+                "截图保存在 Screenshots 文件夹\n" +
+                "统计报告保存在 Statistics 文件夹",
                 "关于 HiJk",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
